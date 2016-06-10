@@ -467,6 +467,7 @@ methylSigCalc = function(meth, groups=c("Treatment"=1,"Control"=0), dispersion="
 #' ### treatment group 0 to evaluate dispersion parameter.
 #' ### Also use local information to improve variance estimation.
 #'
+#' myDiffSig = methylSigCalcWald (meth, dispersion=0, local.disp=TRUE,
 #'                            min.per.group=4)
 #'
 #' @keywords differentialMethylation
