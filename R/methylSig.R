@@ -436,6 +436,217 @@ methylSigCalc = function(meth, groups=c("Treatment"=1,"Control"=0), dispersion="
 
 
 
+#' Calculates differential methylation statistics using a Beta-binomial approach.
+#'
+#' The function calculates differential methylation statistics between two groups of samples. This is the main function of the methylSig package, and the method most users should use to test for DMCs or DMRs. The function uses a Beta-binomial approach to calculate differential methylation statistics, accounting for variation among samples within each group.
+#'
+#' The function calculates differential methylation statistics between two groups of samples. The function uses Beta-binomial approach to calculate differential methylation statistics, accounting for variation among samples within each group. Users who wish to tile their data and test for differentially methylated regions (DMRs) instead DMCs should first use the \code{\link{methylSigTile}} function before using this function.
+#'
+#' @param meth A \code{methylSigData-class} object to calculate differential methylation statistics. It can be obtained using `methylSigReadData'.
+#' @param groups A vector of two numbers specify two groups to compare. See `treatment' argument of \code{\link{methylSigReadData}} function. Default is \code{c(Treatment=1,Control=0)}.
+#' @param dispersion A value indicating which group or groups are used to estimate the variance (dispersion). If groups are defined as c(Treatment=1,Control=0), dispersion can take values "Treatment", "Control", 1, 0 or "both". Default is "both".
+#' @param local.disp A logical value indicating whether to use local information to improve dispersion parameter estimation. Default is FALSE.
+#' @param winsize.disp A number to specify the window size in basepairs for local dispersion estimation. The dispersion (variance) parameter of the groups at the particular location LOC is calculated using information from LOC - winsize.disp to LOC + winsize.disp. This argument is only activated when local.disp=TRUE. Default is 200.
+#' @param local.meth A logical value indicating whether to use local information to improve methylation level estimation. Default is FALSE.
+#' @param winsize.meth a number to specify the window size in basepairs for local methylation level estimation. The group methylation level at the particular location LOC is calculated using information from LOC - winsize.meth to LOC + winsize.meth. This argument is only activated when local.meth=TRUE. Default is 200.
+#' @param min.per.group A vector with two numbers that specify the minimum numbers of samples required to be qualify as defferentially methylated region.  If it is a single number, both groups will use it as the minimum requried number of samples. Default is c(3,3).
+#' @param weightFunc A weight kernel function. The input of this function is from -1 to 1. The default is the tri-weight kernel function defined as function(u) = (1-u^2)^3. Function value and range of parameter for weight function should be from 0 to 1.
+#' @param T.approx A logical value indicating whether to use squared t approximation for the likelihood ratio statistics. Chi-square approximation (T.approx = FALSE) is recommended when the sample size is large.  Default is TRUE.
+#' @param num.cores An integer denoting how many cores should be used for differential methylation calculations (only can be used in machines with multiple cores).
+#'
+#' @return \code{methylSigDiff-class} object containing the differential methylation statistics and locations. p.adjust with method="BH" option is used for P-value correction.
+#'
+#' @seealso \code{\link{methylSigPlot}}, \code{\link{methylSigReadData}}
+#'
+#' @examples
+#' data(sampleData)
+#'
+#' myDiffSig = methylSigCalc (meth)
+#'
+#' ### calculate differential methylation statistics using
+#' ### treatment group 0 to evaluate dispersion parameter.
+#' ### Also use local information to improve variance estimation.
+#'
+#'                            min.per.group=4)
+#'
+#' @keywords differentialMethylation
+#'
+#' @export
+methylSigCalcWald = function(meth, groups=c("Treatment"=1,"Control"=0), dispersion="both",
+         local.disp=FALSE, winsize.disp=200,
+         local.meth=FALSE, winsize.meth=200,
+         min.per.group=c(3,3), weightFunc=methylSig_weightFunc, T.approx = TRUE,
+         num.cores = 1) {
+
+    if(meth@resolution == "tfbs") {
+        local.disp=FALSE
+        local.meth=FALSE
+    }
+
+    if(local.meth == FALSE) winsize.meth = 0
+    if(local.disp == FALSE) winsize.disp = 0
+
+    treatment = slot(meth,"treatment")
+
+    group1 = which(treatment == groups[1])
+    group2 = which(treatment == groups[2])
+
+    if(length(group1) == 0 || length(group2) == 0) {
+        stop("Groups do not match your treatment in the input data")
+    }
+
+    if(length(min.per.group) == 1) {
+        min.per.group = c(min.per.group,min.per.group)
+    }
+
+    validLoci = ((rowSums((methSigObject$totreads> 0)[,group1]) >= min.per.group[1])
+               & (rowSums((methSigObject$totreads> 0)[,group2]) >= min.per.group[2]))
+
+    methSigObject$whichOrd = cumsum(validLoci)
+
+    nLoci = sum(validLoci)
+    if(nLoci >= 1000000) {
+        cat("Total number of ", meth@resolution, "s: ", round(nLoci/1000000,2), "m\n", sep="")
+    } else if(nLoci >= 1000) {
+        cat("Total number of ", meth@resolution, "s: ", round(nLoci/1000,2), "k\n", sep="")
+    } else {
+        cat("Total number of ", meth@resolution, "s: ", nLoci, "\n", sep="")
+    }
+
+    methSigObject=new.env(parent=globalenv())
+    class(methSigObject)='pointer'
+    methSigObject$groups <- list(group1 = group1,
+               group2 = group2,
+               group3 = c(group1,group2)
+              )
+
+#### ReadData function already sorted data
+#### Maybe we can put a flag in meth object to see whether it is sorted already
+
+    orderMethStart = order(meth@data.ids)
+
+    methSigObject$totreads   = (meth@data.numTs[orderMethStart,]+meth@data.numCs[orderMethStart,])
+    methSigObject$creads   = (meth@data.numCs[orderMethStart,])
+    methSigObject$totreads[is.na(methSigObject$totreads)] = 0
+    methSigObject$creads[is.na(methSigObject$creads)] = 0
+
+    methSigObject$uniqueLoc = meth@data.ids[orderMethStart]
+    methSigObject$stepSize = ifelse(meth@destranded, 2, 1)
+    methSigObject$wMeth = winsize.meth
+    methSigObject$wMethIndex = winsize.meth/methSigObject$stepSize
+    methSigObject$wMethNorm = 1/(methSigObject$stepSize*(methSigObject$wMethIndex+1))
+    methSigObject$wDispersion = winsize.disp
+    methSigObject$wDispIndex = winsize.disp/methSigObject$stepSize
+    methSigObject$wDispNorm  = 1/(methSigObject$stepSize*(methSigObject$wDispIndex+1))
+    methSigObject$min.InvDisp = 0.001
+    methSigObject$max.InvDisp = max(1/max(min.disp,1e-6), methSigObject$min.InvDisp)
+    methSigObject$numValidMu = min.per.group
+    methSigObject$weightFunc = weightFunc
+
+    if(dispersion == "both") {
+       methSigObject$dispersionGroups = c(group1,group2)
+    }  else if(dispersion == groups[1] || (length(names(groups)[1])>0 && dispersion == names(groups)[1])) {
+        methSigObject$dispersionGroups = group1
+    } else if(dispersion == names(groups)[2] || dispersion == groups[2]) {
+        methSigObject$dispersionGroups = group2
+    } else {
+        cat("Dispersion should be \"", names(groups)[1], "\", \"", names(groups)[2], "\" or \"both\".\n", sep="")
+        return(NULL)
+    }
+
+    nLoci = NROW(methSigObject$creads)
+    
+    #### chi_g^2 
+    #### m_g-1
+    #### sum((n_gi - 1)(1- n_gi / sum(n_gi))
+
+    nSum1 <- rowSums(methSigObject$totreads[,group1])
+    nSum2 <- rowSums(methSigObject$totreads[,group2])
+    muList1 <- rowSums(methSigObject$creads[,group1])/(rowSums(methSigObject$totreads[,group1])+1e-100)
+    muList2 <- rowSums(methSigObject$creads[,group2])/(rowSums(methSigObject$totreads[,group2])+1e-100)
+
+    chi2.1 = rowSums((methSigObject$creads[,group1]/(methSigObject$totreads[,group1]+1e-100) 
+                - muList1)^2 * methSigObject$totreads[,group1])
+
+    chi2.2 = rowSums((methSigObject$creads[,group2]/(methSigObject$totreads[,group2]+1e-100) 
+                - muList2)^2 * methSigObject$totreads[,group2])
+
+    m.minus1.1 = pmax(rowSums((methSigObject$totreads > 0)[,group1]
+                             ) - 1, 0)
+    m.minus1.2 = pmax(rowSums((methSigObject$totreads > 0)[,group2]
+                             ) - 1, 0) 
+
+    sum.disp.part1 = rowSums((methSigObject$totreads[,group1] - 1)*(1- methSigObject$totreads[,group1] / nSum1)
+                            )
+    sum.disp.part2 = rowSums((methSigObject$totreads[,group2] - 1)*(1- methSigObject$totreads[,group2] / nSum2)
+                            )
+
+    ####
+    ### Calculate phiHat
+    
+    phihat = ((chi2.1 + chi2.2) - (m.minus1.1*muList1*(1-muList1) + m.minus1.2*muList2*(1-muList2))
+             )[validLoci] / (sum.disp.part1 * muList1*(1-muList1) + sum.disp.part2 * muList2*(1-muList2)
+                 +1e-100)[validLoci]
+
+    phihat = pmin(pmax(phihat, 0), 1)
+
+    varInvProp = methSigObject$totreads[validLoci,]/(1+(methSigObject$totreads[validLoci,]-1)*phihat + 1e-100)
+
+    weightTot1 = rowSums(methSigObject$creads[validLoci, group1]/(methSigObject$totreads[validLoci, group1]+1e-100)*varInvProp[,group1])
+    weightTot2 = rowSums(methSigObject$creads[validLoci, group2]/(methSigObject$totreads[validLoci, group2]+1e-100)*varInvProp[,group2])
+    
+    totVarInv1 = rowSums(varInvProp[,group1])
+    totVarInv2 = rowSums(varInvProp[,group2])
+
+    muHat1 = weightTot1/totVarInv1
+    muHat2 = weightTot2/totVarInv2
+
+    muHatNull = (weightTot1+weightTot2)/(totVarInv1+totVarInv2)
+
+    se.tol = sqrt(muHatNull * (1-muHatNull) * (1/totVarInv1+1/totVarInv2)) + 1e-100
+
+#    if(num.cores == 1) {
+#        result = do.call(rbind, lapply(which(validLoci), methylSig_dataProcessWald, methSigObject))
+#    } else {
+#        result = do.call(rbind, mclapply(which(validLoci), methylSig_dataProcessWald, methSigObject, mc.cores=num.cores))
+#    }
+#    cat("\n")
+
+#    logLikRatio = result[,3]
+
+ADD.DF = 2
+
+    degrees.of.freedom = m.minus1.1[validLoci] + m.minus1.2[validLoci] + ADD.DF
+    waldStat = (muHat2-muHat1)/se.tol
+    if(T.approx) {
+         pvalue = pt(-abs(waldStat), degrees.of.freedom)*2
+    } else {
+         pvalue = pnorm(-abs(waldStat))*2
+    }
+
+    results=cbind(pvalue,p.adjust(pvalue, method ="BH"), (muHat1 - muHat2)*100, waldStat,
+                  phihat, degrees.of.freedom, muHat1*100, muHat2*100)
+
+    colnames(results) = c("pvalue","qvalue", "meth.diff","waldStat","phi", "df", paste("mu", groups, sep=""))
+
+
+    optionForLocalDisp = ifelse(local.disp, paste(" & winsize.disp=", winsize.disp, sep=""), "")
+    optionForLocalMeth = ifelse(local.meth, paste(" & winsize.meth=", winsize.meth, sep=""), "")
+
+    options = paste("dispersion=", dispersion, " & local.disp=", local.disp, optionForLocalDisp,
+                             " & local.meth=", local.meth, optionForLocalMeth, "& min.per.group=c(",min.per.group[1],
+                             ",",min.per.group[2], ")& Total: ", NROW(results), sep="")
+
+    methylSig.newDiff(meth@data.ids[orderMethStart[validLoci]], meth@data.chr[orderMethStart[validLoci]],
+                              meth@data.start[orderMethStart[validLoci]],meth@data.end[orderMethStart[validLoci]],
+                              meth@data.strand[orderMethStart[validLoci]], results, sample.ids=meth@sample.ids[c(group1,group2)],
+                              sample.filenames=meth@sample.filenames[c(group1,group2)],
+                              treatment=meth@treatment[c(group1,group2)], destranded=meth@destranded,
+                              resolution=meth@resolution,
+                              options=options, data.options = meth@options)
+}
+
+
 
 
 # Not called by ny other function
