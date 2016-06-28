@@ -44,7 +44,12 @@ write.methylSigDiff <- function(object, ...) {
 #'
 #' @export
 binomialDiffCalc <- function(meth, groups=c("Treatment"=1,"Control"=0), min.per.group=c(3,3)) {
-    treatment = slot(meth, "treatment")
+	rowSumsExt <- function(x, ...) {
+        if(NCOL(x) == 1) return (x)
+        rowSums(x,...)
+    }
+
+	treatment = slot(meth, "treatment")
 
     group1 = which(treatment == groups[1])
     group2 = which(treatment == groups[2])
@@ -53,12 +58,12 @@ binomialDiffCalc <- function(meth, groups=c("Treatment"=1,"Control"=0), min.per.
         min.per.group = c(min.per.group,min.per.group)
     }
 
-    vlist = rowSums(meth@data.coverage[,group1]>0,na.rm = TRUE) >= min.per.group[1] &
-                   rowSums(meth@data.coverage[,group2]>0, na.rm=TRUE) >= min.per.group[2]
-    treads1 = rowSums(meth@data.numTs[vlist,group1], na.rm = TRUE)
-    treads2 = rowSums(meth@data.numTs[vlist,group2], na.rm = TRUE)
-    creads1 = rowSums(meth@data.numCs[vlist,group1], na.rm = TRUE)
-    creads2 = rowSums(meth@data.numCs[vlist,group2], na.rm = TRUE)
+    vlist = rowSumsExt(meth@data.coverage[,group1]>0,na.rm = TRUE) >= min.per.group[1] &
+                   rowSumsExt(meth@data.coverage[,group2]>0, na.rm=TRUE) >= min.per.group[2]
+    treads1 = rowSumsExt(meth@data.numTs[vlist,group1], na.rm = TRUE)
+    treads2 = rowSumsExt(meth@data.numTs[vlist,group2], na.rm = TRUE)
+    creads1 = rowSumsExt(meth@data.numCs[vlist,group1], na.rm = TRUE)
+    creads2 = rowSumsExt(meth@data.numCs[vlist,group2], na.rm = TRUE)
 
     logLikRatio <- 2*(creads1*log(creads1/(treads1+creads1)+1e-100)
                       + treads1*log(treads1/(treads1+creads1)+1e-100)
