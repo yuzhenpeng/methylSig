@@ -203,7 +203,7 @@ methylSigReadData = function(fileList,
     n.files = NROW(fileList)
 
     if(num.cores > 1) {
-        chrList <- mclapply(1:n.files, methylSigReadDataSingleFile, fileList, header = header, minCount=minCount, maxCount=maxCount, destranded, filterSNPs, quiet, mc.cores=num.cores)
+        chrList <- mclapply(1:n.files, methylSigReadDataSingleFile, fileList, header = header, minCount=minCount, maxCount=maxCount, destranded, filterSNPs, quiet, mc.cores=num.cores, mc.preschedule=FALSE)
     } else {
         chrList = list()
         for(i in 1:n.files) {

@@ -400,7 +400,7 @@ methylSigCalc = function(meth, groups=c("Treatment"=1,"Control"=0), dispersion="
     if(num.cores == 1) {
         result = do.call(rbind, lapply(which(validLoci), methylSig_dataProcess, methSigObject))
     } else {
-        result = do.call(rbind, mclapply(which(validLoci), methylSig_dataProcess, methSigObject, mc.cores=num.cores))
+        result = do.call(rbind, mclapply(which(validLoci), methylSig_dataProcess, methSigObject, mc.cores=num.cores, mc.preschedule=FALSE))
     }
     cat("\n")
 
