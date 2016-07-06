@@ -30,6 +30,10 @@ test_that('Already tiled data throws error', {
 ################################################################################
 # Test window tiling with default settings (except header)
 
+files = c(
+  system.file('extdata', 'test_1.txt', package='methylSig'),
+  system.file('extdata', 'test_2.txt', package='methylSig'))
+
 data_default = methylSigReadData(
   fileList = files,
   sample.ids = c('test_1','test_2'),
@@ -39,9 +43,9 @@ data_default = methylSigReadData(
   context = 'CpG',
   resolution = "base",
   treatment = c(1,0),
-  destranded = TRUE,
+  destranded = FALSE,
   maxCount = 500,
-  minCount = 10,
+  minCount = 1,
   filterSNPs = FALSE,
   num.cores = 1,
   quiet = TRUE)
@@ -66,6 +70,26 @@ test_that('Test that tiling aggregates properly', {
 ################################################################################
 # Test annotation tiling with default parameters
 
+files = c(
+  system.file('extdata', 'test_1.txt', package='methylSig'),
+  system.file('extdata', 'test_2.txt', package='methylSig'))
+
+data_default = methylSigReadData(
+  fileList = files,
+  sample.ids = c('test_1','test_2'),
+  assembly = 'hg19',
+  pipeline = 'bismark and methylKit',
+  header = FALSE,
+  context = 'CpG',
+  resolution = "base",
+  treatment = c(1,0),
+  destranded = FALSE,
+  maxCount = 500,
+  minCount = 1,
+  filterSNPs = FALSE,
+  num.cores = 1,
+  quiet = TRUE)
+
 cgi_file = system.file('extdata', 'test_annotation.txt', package='methylSig')
 cgis = read.table(cgi_file, header=F, sep='\t', stringsAsFactors=F)
 colnames(cgis) = c('chr','start','end','name')
@@ -73,10 +97,13 @@ colnames(cgis) = c('chr','start','end','name')
 tiled_cgis = methylSigTile(meth = data_default, tiles = cgis)
 
 test_that('Test tiling by test_annotation aggregates properly',{
-  expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 43045070), 1], expected = 44)
-  expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 43045070), 2], expected = 0)
-  expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 43052350), 1], expected = 116)
-  expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 43052350), 2], expected = 207)
-  expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 43053316), 1], expected = 0)
-  expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 43053316), 2], expected = 176)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 10 & tiled_cgis@data.chr == 'chr1'), 1], expected = 20)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 10 & tiled_cgis@data.chr == 'chr1'), 2], expected = 30)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 10 & tiled_cgis@data.chr == 'chr21'), 1], expected = 12)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 10 & tiled_cgis@data.chr == 'chr21'), 2], expected = 14)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 30 & tiled_cgis@data.chr == 'chr21'), 1], expected = 18)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 50 & tiled_cgis@data.chr == 'chr21'), 1], expected = 75)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 60 & tiled_cgis@data.chr == 'chr21'), 1], expected = 40)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 60 & tiled_cgis@data.chr == 'chr21'), 2], expected = 35)
+	expect_equal( tiled_cgis@data.coverage[which(tiled_cgis@data.start == 70 & tiled_cgis@data.chr == 'chr21'), 1], expected = 0)
 })

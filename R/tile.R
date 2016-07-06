@@ -2,6 +2,8 @@
 #'
 #' This funciton tiles data within windows of a given width across genome. It gives total number of methylated cytosines and total number of reads (coverage) within each tiled window. This is used prior to the \code{\link{methylSigCalc}} function when the user prefers to conduct a tiled analysis instead of a base specific analysis for differential methylation. Tiling may provide higher power to detect significant differences, especially for experiments with low coverage.
 #'
+#' NOTE: When supplying \code{tiles}, the tiles are considered open on the left, and closed on the right.
+#'
 #' @param meth A \code{methylSigData-class} object used to tile data.
 #' @param tiles A data.frame including columns with chr, start, end columns for predefined tiles. Those CpG sites not belonging any tile will be removed from tiled data. If \code{tiles} is not \code{NULL}, then \code{win.size} is ignored.
 #' @param win.size An integer value indicating the desired window size in bps. Default is 25. If \code{tiles} is not \code{NULL}, then \code{win.size} is ignored.
@@ -13,13 +15,23 @@
 #' methTile = methylSigTile(meth)
 #' @export
 methylSigTile <- function(meth, tiles = NULL, win.size=25) {
+	colSumsExt = function(x, ...) {
+        if(nrow(x) == 1) {
+			return (x)
+		} else {
+        	return(colSums(x, ...))
+		}
+    }
+
 	if(meth@resolution == "region") stop("Object has already been tiled")
 
 	if(is.null(tiles)) {
 		message(sprintf('Tiling by %s bp windows', win.size))
+		# Determine the maximum start base across all chromosomes including win.size + 1
 		MAXBASE = max(meth@data.start) + win.size + 1
 #        MAXBASE10 = MAXBASE = 10^{ceiling(log10(MAXBASE + 1))}
 
+		# Hash the starts with as.numeric(meth@data.chr)*MAXBASE
        startList = as.numeric(meth@data.chr)*MAXBASE + meth@data.start
        uniqueStartList = unique(startList - (startList - 1) %% win.size)
 
@@ -44,25 +56,45 @@ methylSigTile <- function(meth, tiles = NULL, win.size=25) {
    } else {
      message('Tiling by regions')
 
-     # Need to have matrices corresponding to the number of samples
+     # Need to have matrices with columns equaling the number of samples
+	 # NOTE: coverage sums are handled in the methylSig.newData() call below
      numCs = numTs = matrix(0, nrow = nrow(tiles), ncol = ncol(meth@data.numCs))
      for(chr in levels(meth@data.chr)) {
-         whichInTiles = which(tiles$chr == chr)
+		 # Find the indices wrt tiles matching the chr
+		 whichInTiles = which(tiles$chr == chr)
+
          if(length(whichInTiles) > 0) {
-             # Determine the start and end locations for the tiles on this chromosome
+             # Extract the actual start and end locations (not indices) of the tiles on chr
+			 # These are the same length as whichInTiles
              startList = tiles$start[whichInTiles]
              endList = tiles$end[whichInTiles]
 
-             # Extract rows of meth are relevant
+             # Find the indices wrt meth matching the chr
+			 # This is a different length than whichInTiles, startList, and endList
              whichVlist = which(meth@data.chr==chr)
 
-             # Find which
-             whichSTART = findInterval(startList, meth@data.start[whichVlist]+1)
+             # Determine which interval (defined by meth@data.start[whichVlist])
+			 # the elements of startList and endList belong to
+             whichSTART = findInterval(startList, meth@data.start[whichVlist]) + 1
              whichEND = findInterval(endList, meth@data.start[whichVlist])
 
-             for(i in which(whichEND > whichSTART)) {
-                 numCs[whichInTiles[i],] = numCs[whichInTiles[i], ] + colSums(meth@data.numCs[ whichVlist[whichSTART[i]:whichEND[i]], ], na.rm=T)
-                 numTs[whichInTiles[i],] = numTs[whichInTiles[i], ] + colSums(meth@data.numTs[ whichVlist[whichSTART[i]:whichEND[i]], ], na.rm=T)
+             for(i in which(whichEND >= whichSTART)) {
+				 # Need to coerce to matrix and use colSumsExt (defined above) when only one row
+				 tmpCs = as.matrix(meth@data.numCs[ whichVlist[whichSTART[i]:whichEND[i]], ])
+				 tmpTs = as.matrix(meth@data.numTs[ whichVlist[whichSTART[i]:whichEND[i]], ])
+
+				 # Also need to check the dimension of the matrix in the case of a single row
+				 # When coerced to a matrix, will be a column instead of row vector
+				 if(ncol(tmpCs) == 1) {
+					 tmpCs = t(tmpCs)
+				 }
+				 if(ncol(tmpTs) == 1) {
+					 tmpTs = t(tmpTs)
+				 }
+
+				 # NOTE: Coverage sums are handled in the methylSig.newData() call below
+				 numCs[whichInTiles[i],] = numCs[whichInTiles[i], ] + colSumsExt(tmpCs, na.rm=T)
+                 numTs[whichInTiles[i],] = numTs[whichInTiles[i], ] + colSumsExt(tmpTs, na.rm=T)
              }
          }
      }
@@ -85,6 +117,14 @@ methylSigTile <- function(meth, tiles = NULL, win.size=25) {
 #' @seealso \code{\link{getTFBSInfo}} and \code{\link{methylSigTile}}.
 #' @export
 methylSigTileTFBS <- function(meth, tfbsInfo) {
+	colSumsExt = function(x, ...) {
+        if(nrow(x) == 1) {
+			return (x)
+		} else {
+        	return(colSums(x, ...))
+		}
+    }
+
     totalTFBS = length(levels(tfbsInfo[[2]]$name))
     numCs = numTs = matrix(0, ncol=NCOL(meth@data.coverage), nrow=totalTFBS)
 
@@ -101,8 +141,8 @@ methylSigTileTFBS <- function(meth, tfbsInfo) {
 
             for(i in which(whichEND > whichSTART)) {
                 whichTFBS = as.numeric(tfbsInfo[[2]]$name[tfbsIndexList[i]])
-                numCs[whichTFBS,] = numCs[whichTFBS,] + colSums(meth@data.numCs[whichVlist[(whichSTART[i]+1):whichEND[i]],,drop=F], na.rm=T)
-                numTs[whichTFBS,] = numTs[whichTFBS,] + colSums(meth@data.numTs[whichVlist[(whichSTART[i]+1):whichEND[i]],,drop=F], na.rm=T)
+                numCs[whichTFBS,] = numCs[whichTFBS,] + colSumsExt(as.matrix(meth@data.numCs[whichVlist[(whichSTART[i]+1):whichEND[i]],,drop=F]), na.rm=T)
+                numTs[whichTFBS,] = numTs[whichTFBS,] + colSumsExt(as.matrix(meth@data.numTs[whichVlist[(whichSTART[i]+1):whichEND[i]],,drop=F]), na.rm=T)
             }
         }
     }

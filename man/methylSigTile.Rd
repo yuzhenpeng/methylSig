@@ -19,6 +19,9 @@ A \code{methylSigData-class} object.
 \description{
 This funciton tiles data within windows of a given width across genome. It gives total number of methylated cytosines and total number of reads (coverage) within each tiled window. This is used prior to the \code{\link{methylSigCalc}} function when the user prefers to conduct a tiled analysis instead of a base specific analysis for differential methylation. Tiling may provide higher power to detect significant differences, especially for experiments with low coverage.
 }
+\details{
+NOTE: When supplying \code{tiles}, the tiles are considered open on the left, and closed on the right.
+}
 \examples{
 data(sampleData)
 methTile = methylSigTile(meth)
