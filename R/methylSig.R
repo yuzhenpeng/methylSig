@@ -242,8 +242,8 @@ methylSig_dataProcess <- function(loc,obj){
 
         #### log Likelihood ratio calculation
         ###### testing ###########
-        validMuList = loc
-        weightMu = 1
+        # validMuList = loc
+        # weightMu = 1
         ##########################
 
         logLikRatio = methylSig_logLik (muEstC[1], phiCommonEst, obj$creads[obj$groups[[1]], validMuList], obj$treads[obj$groups[[1]], validMuList], weightMu) +
