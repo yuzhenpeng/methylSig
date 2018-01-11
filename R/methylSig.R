@@ -202,7 +202,8 @@ methylSig_dataProcess <- function(loc,obj){
 
     validPhiList = validPhiList[whichUseful]
 
-    # if(length(validPhiList) > 5) validPhiList = validPhiList[order(abs(obj$uniqueLoc[validPhiList]  - obj$uniqueLoc[loc]))[1:5]]
+    if(length(validPhiList) > 10) validPhiList = validPhiList[order(abs(obj$uniqueLoc[validPhiList]  - obj$uniqueLoc[loc]))[1:10]]
+    if(length(validMuList) > 10) validMuList = validMuList[order(abs(obj$uniqueLoc[validMuList]  - obj$uniqueLoc[loc]))[1:10]]
 
     weightPhi <- obj$weightFunc((obj$uniqueLoc[validPhiList] - obj$uniqueLoc[loc])*obj$wDispNorm)
     weightMu  <- obj$weightFunc((obj$uniqueLoc[validMuList]  - obj$uniqueLoc[loc])*obj$wMethNorm)
